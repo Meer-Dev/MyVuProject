@@ -30,3 +30,4 @@ A modern project management application built with Next.js that helps teams orga
 
 1. Clone the repository
 2. Install dependencies:
+# MyVuProject
