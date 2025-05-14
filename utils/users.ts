@@ -61,65 +61,44 @@ export const users = {
 
   // This function attempts to add the user to the users table after auth
   async captureUserDetails(authUser: User) {
-    if (!authUser || !authUser.id) {
-      console.error("Invalid auth user provided to captureUserDetails");
-      throw new Error("Invalid auth user data");
-    }
+    if (!authUser?.id) throw new Error("Invalid auth user");
 
     try {
-      // First check if user already exists to avoid duplicate attempts
-      const { data: existingUser, error: checkError } = await supabase
+      // Wait briefly for trigger to execute
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      const { data, error } = await supabase
         .from("users")
-        .select("id, email, name")
+        .select("*")
         .eq("id", authUser.id)
-        .maybeSingle();
+        .single();
 
-      // If user exists and we got valid data, return it
-      if (existingUser) {
-        console.log("User profile already exists:", existingUser);
-        return existingUser as IUser;
+      if (error || !data) {
+        // Fallback manual creation if trigger failed
+        const userData = {
+          id: authUser.id,
+          email: authUser.email || "",
+          name:
+            authUser.user_metadata?.full_name ||
+            authUser.email?.split("@")[0] ||
+            "User",
+          avatar: authUser.user_metadata?.avatar_url || "",
+          description: "",
+          provider:
+            (authUser.app_metadata?.provider as IUser["provider"]) || "email",
+        };
+
+        const { data: newUser, error: createError } = await supabase
+          .from("users")
+          .upsert(userData)
+          .select()
+          .single();
+
+        if (createError) throw createError;
+        return newUser;
       }
 
-      // If there was an error other than "not found", log it
-      if (checkError && checkError.code !== "PGRST116") {
-        console.error("Error checking for existing user:", checkError);
-      }
-
-      // Extract provider from metadata or default to email
-      const provider =
-        (authUser.app_metadata?.provider as IUser["provider"]) || "email";
-
-      // Prepare user data
-      const userData: Partial<IUser> = {
-        id: authUser.id,
-        email: authUser.email || "",
-        name:
-          authUser.user_metadata?.full_name ||
-          authUser.email?.split("@")[0] ||
-          "User",
-        avatar: authUser.user_metadata?.avatar_url || "",
-        description: "",
-        provider,
-      };
-
-      console.log("Creating new user profile:", userData);
-
-      // Create the user profile - using the service role client if available
-      const { data: newUser, error: createError } = await supabase
-        .from("users")
-        .upsert([userData], {
-          onConflict: "id",
-          ignoreDuplicates: false,
-        })
-        .select();
-
-      if (createError) {
-        console.error("Error creating user profile:", createError);
-        throw createError;
-      }
-
-      console.log("User profile created successfully:", newUser?.[0]);
-      return newUser?.[0] as IUser;
+      return data;
     } catch (error) {
       console.error("User capture error:", error);
       throw error;

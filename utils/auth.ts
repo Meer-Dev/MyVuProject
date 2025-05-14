@@ -1,6 +1,7 @@
 import { useAccessStore } from "@/stores/useAccessStore";
 import { createClient } from "./supabase/client";
 import { users } from "./users";
+import { getAuthError } from "./auth-errors";
 
 const supabase = createClient();
 
@@ -12,52 +13,30 @@ export type AuthError = {
 export const auth = {
   // Email & Password Sign Up
   async signUp(email: string, password: string) {
-    console.log("Beginning signup process for:", email);
-
     try {
-      // Step 1: Sign up the user with Supabase Auth
-      const { data, error: signUpError } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           emailRedirectTo: `${location.origin}/auth/callback`,
           data: {
-            full_name: email.split("@")[0], // Default name from email
+            full_name: email.split("@")[0],
+            avatar_url: "",
           },
         },
       });
 
-      // If signup fails
-      if (signUpError) {
-        console.error("Auth signup error:", signUpError);
-        throw signUpError;
-      }
+      if (error) throw error;
 
-      // If no user data, something went wrong
-      if (!data?.user) {
-        console.error("No user data returned from signup");
-        throw new Error("Failed to create user account");
-      }
-
-      console.log("Auth user created successfully:", data.user.id);
-
-      // Step 2: Create user profile in users table
-      try {
-        const userProfile = await users.captureUserDetails(data.user);
-        console.log("User profile created:", userProfile);
-      } catch (profileError: any) {
-        console.error("Profile creation error:", profileError);
-        // We don't delete the auth user here, as that might cause more issues
-        // Just report the error to the user
-        throw new Error(
-          `Account created but profile setup failed: ${profileError.message || "Unknown error"}`
-        );
+      // Wait for trigger/profile creation
+      if (data.user) {
+        await users.captureUserDetails(data.user);
       }
 
       return data;
     } catch (error) {
-      console.error("Signup process error:", error);
-      throw error;
+      console.error("Signup error:", error);
+      throw getAuthError(error);
     }
   },
 
