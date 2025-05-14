@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Icons } from '@/components/Icons';
-import { Button } from '@/components/ui/button';
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Icons } from "@/components/Icons";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -11,48 +11,83 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import Link from 'next/link';
-import { auth } from '@/utils/auth';
-import { useToast } from '@/components/ui/use-toast';
-import { getAuthError } from '@/utils/auth-errors';
-import { OAuthSignIn } from '@/components/auth/OAuthSignIn';
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import Link from "next/link";
+import { auth } from "@/utils/auth";
+import { useToast } from "@/components/ui/use-toast";
+import { getAuthError } from "@/utils/auth-errors";
+import { OAuthSignIn } from "@/components/auth/OAuthSignIn";
 
 export function CreateAccountForm() {
   const [isLoading, setIsLoading] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password !== confirmPassword) {
+    setError(null);
+
+    // Client-side validations
+    if (!email || !email.includes("@")) {
+      setError("Please enter a valid email address");
       toast({
-        variant: 'destructive',
-        title: 'Validation Error',
-        description: 'Passwords do not match',
+        variant: "destructive",
+        title: "Invalid Email",
+        description: "Please enter a valid email address.",
+      });
+      return;
+    }
+
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters long");
+      toast({
+        variant: "destructive",
+        title: "Password Too Short",
+        description: "Password must be at least 6 characters long.",
+      });
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
+      toast({
+        variant: "destructive",
+        title: "Validation Error",
+        description: "Passwords do not match",
       });
       return;
     }
 
     try {
       setIsLoading(true);
-      await auth.signUp(email, password);
-      toast({
-        title: 'Success',
-        description: 'Please check your email to verify your account.',
-      });
-      router.push('/login');
-    } catch (error) {
-      const { message } = getAuthError(error);
+      console.log("Starting signup process...");
+
+      const result = await auth.signUp(email, password);
+      console.log("Signup successful:", result);
 
       toast({
-        variant: 'destructive',
-        title: 'Account Creation Error',
+        title: "Account Created",
+        description: result.user?.email_confirmed_at
+          ? "Your account has been created successfully!"
+          : "Please check your email to verify your account.",
+      });
+
+      // Navigate to login page after successful signup
+      router.push("/login");
+    } catch (error) {
+      console.error("Signup error:", error);
+      const { message } = getAuthError(error);
+      setError(message);
+
+      toast({
+        variant: "destructive",
+        title: "Account Creation Error",
         description: message,
       });
     } finally {
@@ -71,11 +106,20 @@ export function CreateAccountForm() {
         </CardHeader>
         <CardContent className="grid gap-4">
           <div>
-            Already have an account?{' '}
+            Already have an account?{" "}
             <Link href="/login" className="text-blue-500">
               Login
             </Link>
           </div>
+
+          {error && (
+            <div
+              className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative"
+              role="alert"
+            >
+              <span className="block sm:inline">{error}</span>
+            </div>
+          )}
 
           <div className="grid gap-2">
             <Label htmlFor="email">Email</Label>

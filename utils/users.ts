@@ -1,5 +1,5 @@
-import { createClient } from './supabase/client';
-import type { User } from '@supabase/supabase-js';
+import { createClient } from "./supabase/client";
+import type { User } from "@supabase/supabase-js";
 
 const supabase = createClient();
 
@@ -15,18 +15,18 @@ export interface IUser {
   name: string;
   description: string;
   avatar: string;
-  created_at: Date;
-  updated_at: Date;
-  links: IUserLink[];
-  provider: 'google' | 'github' | 'email';
+  created_at?: Date;
+  updated_at?: Date;
+  links?: IUserLink[];
+  provider: "google" | "github" | "email";
 }
 
 export const users = {
   async getUser(id: string) {
     const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', id)
+      .from("users")
+      .select("*")
+      .eq("id", id)
       .single();
 
     if (error) throw error;
@@ -34,43 +34,103 @@ export const users = {
   },
 
   async createUser(user: Partial<IUser>) {
-    const { data, error } = await supabase
-      .from('users')
-      .insert([user])
-      .select()
-      .single();
+    console.log("Creating user profile:", user);
 
-    if (error) throw error;
-    return data as IUser;
+    try {
+      // Use upsert instead of insert - this will update if the record exists
+      // or create it if it doesn't
+      const { data, error } = await supabase
+        .from("users")
+        .upsert([user], {
+          onConflict: "id",
+          ignoreDuplicates: false,
+        })
+        .select();
+
+      if (error) {
+        console.error("Error in createUser:", error);
+        throw error;
+      }
+
+      return data?.[0] as IUser;
+    } catch (err) {
+      console.error("Exception in createUser:", err);
+      throw err;
+    }
   },
 
+  // This function attempts to add the user to the users table after auth
   async captureUserDetails(authUser: User) {
-    // Check if user already exists
-    const existingUser = await this.getUser(authUser.id).catch(() => null);
-    if (existingUser) return existingUser;
+    if (!authUser || !authUser.id) {
+      console.error("Invalid auth user provided to captureUserDetails");
+      throw new Error("Invalid auth user data");
+    }
 
-    // Extract provider
-    const provider = authUser.app_metadata.provider as IUser['provider'];
+    try {
+      // First check if user already exists to avoid duplicate attempts
+      const { data: existingUser, error: checkError } = await supabase
+        .from("users")
+        .select("id, email, name")
+        .eq("id", authUser.id)
+        .maybeSingle();
 
-    // Create new user
-    const newUser: Partial<IUser> = {
-      id: authUser.id,
-      email: authUser.email!,
-      name: authUser.user_metadata.full_name || authUser.email!.split('@')[0],
-      avatar: authUser.user_metadata.avatar_url || '',
-      description: '',
-      provider,
-      links: [],
-    };
+      // If user exists and we got valid data, return it
+      if (existingUser) {
+        console.log("User profile already exists:", existingUser);
+        return existingUser as IUser;
+      }
 
-    return await this.createUser(newUser);
+      // If there was an error other than "not found", log it
+      if (checkError && checkError.code !== "PGRST116") {
+        console.error("Error checking for existing user:", checkError);
+      }
+
+      // Extract provider from metadata or default to email
+      const provider =
+        (authUser.app_metadata?.provider as IUser["provider"]) || "email";
+
+      // Prepare user data
+      const userData: Partial<IUser> = {
+        id: authUser.id,
+        email: authUser.email || "",
+        name:
+          authUser.user_metadata?.full_name ||
+          authUser.email?.split("@")[0] ||
+          "User",
+        avatar: authUser.user_metadata?.avatar_url || "",
+        description: "",
+        provider,
+      };
+
+      console.log("Creating new user profile:", userData);
+
+      // Create the user profile - using the service role client if available
+      const { data: newUser, error: createError } = await supabase
+        .from("users")
+        .upsert([userData], {
+          onConflict: "id",
+          ignoreDuplicates: false,
+        })
+        .select();
+
+      if (createError) {
+        console.error("Error creating user profile:", createError);
+        throw createError;
+      }
+
+      console.log("User profile created successfully:", newUser?.[0]);
+      return newUser?.[0] as IUser;
+    } catch (error) {
+      console.error("User capture error:", error);
+      throw error;
+    }
   },
 
   async updateUser(id: string, updates: Partial<IUser>) {
     const { data, error } = await supabase
-      .from('users')
+      .from("users")
       .update(updates)
-      .eq('id', id)
+      .eq("id", id)
       .select()
       .single();
 
@@ -80,12 +140,12 @@ export const users = {
 
   async updateProfile(
     userId: string,
-    updates: Partial<Omit<IUser, 'id' | 'email' | 'provider'>>
+    updates: Partial<Omit<IUser, "id" | "email" | "provider">>
   ) {
     const { error } = await supabase
-      .from('users')
+      .from("users")
       .update(updates)
-      .eq('id', userId);
+      .eq("id", userId);
 
     if (error) throw error;
 
@@ -106,7 +166,7 @@ export const users = {
       });
 
       if (authError) {
-        console.error('Failed to update auth user metadata:', authError);
+        console.error("Failed to update auth user metadata:", authError);
       }
     }
   },
